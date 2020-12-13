@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Sensor graph</title>
+    <link rel="shortcut icon" href="/favicon.ico" />
+</head>
+<!-- <div style="text-align:center;"><b>加速度センサー</b></div> -->
+<div class="chart-container" position: relative; height:350px; width:100%;>
+    <canvas id="accel-graph" width="600" height="400"></canvas>
+</div>
+<div class="chart-container" position: relative; height:350px; width:100%;>
+    <canvas id="gyro-graph" width="600" height="400"></canvas>
+</div>
+<br><br>
+<script src="/Chart.min.js"></script>
+<script>
+    var acc_graphData = {
+        labels: [],  // X軸のデータ (時間)
+        datasets: [
+            {
+                label: "加速度-X",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(214,108,105,0.8)",
+                backgroundColor: "rgba(214,108,105,0.5)",
+            },
+            {
+                label: "加速度-Y",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(111,214,137,0.8)",
+                backgroundColor: "rgba(111,214,137,0.5)",
+            },
+            {
+                label: "加速度-Z",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(134,142,235,0.8)",
+                backgroundColor: "rgba(134,142,235,0.5)",
+            },
+        ],
+    };
+    var acc_graphOptions = {
+        maintainAspectRatio: false,
+        responsive: true,
+        title: {
+            display: true,
+            text: '加速度センサー'
+        },
+        scales: {
+            xAxes: [{
+                display: true,
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Time'
+                }
+            }],
+            yAxes: [{
+                ticks: {
+                    beginAtZero: true,
+                },
+                display: true,
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Value [G]'
+                }
+            }]
+        }
+    };
+    var gyro_graphData = {
+        labels: [],  // X軸のデータ (時間)
+        datasets: [
+            {
+                label: "ジャイロ-X",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(214,108,105,0.8)",
+                backgroundColor: "rgba(214,108,105,0.5)",
+            },
+            {
+                label: "ジャイロ-Y",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(111,214,137,0.8)",
+                backgroundColor: "rgba(111,214,137,0.5)",
+            },
+            {
+                label: "ジャイロ-Z",
+                data: [], // Y軸のデータ(センシング結果)
+                fill: false,
+                borderColor: "rgba(134,142,235,0.8)",
+                backgroundColor: "rgba(134,142,235,0.5)",
+            },
+        ],
+    };
+    var gyro_graphOptions = {
+        maintainAspectRatio: false,
+        responsive: true,
+        title: {
+            display: true,
+            text: 'ジャイロセンサー'
+        },
+        scales: {
+            xAxes: [{
+                display: true,
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Time'
+                }
+            }],
+            yAxes: [{
+                ticks: {
+                    beginAtZero: true,
+                },
+                display: true,
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Value [deg/s]'
+                }
+            }]
+        }
+    };
+
+    const GRAPH_LIMIT = 100
+
+    function addLimited(array, value, limit) {
+        array.push(value);
+        if (limit < array.length) {
+            array.shift();
+        }
+    }
+
+    var ctx = document.getElementById("accel-graph").getContext('2d');
+    var acc_chart = new Chart(ctx, {
+        type: 'line',
+        data: acc_graphData,
+        options: acc_graphOptions
+    });
+
+    var ctx1 = document.getElementById("gyro-graph").getContext('2d');
+    var gyro_chart = new Chart(ctx1, {
+        type: 'line',
+        data: gyro_graphData,
+        options: gyro_graphOptions
+    });
+
+    var ws = new WebSocket('ws://' + window.location.hostname + ':81/');
+    ws.onmessage = function (evt) {
+        var Time = new Date().toLocaleTimeString();
+        var json_data = JSON.parse(evt.data)
+        var data_acc = json_data["Accelerometer"];
+        var data_gyr = json_data["Gyro"];
+        var data_geo = json_data["Geomagnetic"];
+        console.log(Time);
+        console.log(json_data);
+
+        addLimited(acc_chart.data.labels, Time, GRAPH_LIMIT);
+        addLimited(acc_chart.data.datasets[0].data, data_acc["x"], GRAPH_LIMIT);
+        addLimited(acc_chart.data.datasets[1].data, data_acc["y"], GRAPH_LIMIT);
+        addLimited(acc_chart.data.datasets[2].data, data_acc["z"], GRAPH_LIMIT);
+        acc_chart.update();
+
+        addLimited(gyro_chart.data.labels, Time, GRAPH_LIMIT);
+        addLimited(gyro_chart.data.datasets[0].data, data_gyr["x"], GRAPH_LIMIT);
+        addLimited(gyro_chart.data.datasets[1].data, data_gyr["y"], GRAPH_LIMIT);
+        addLimited(gyro_chart.data.datasets[2].data, data_gyr["z"], GRAPH_LIMIT);
+        gyro_chart.update();
+    };
+    ws.onclose = function (evt) {
+        console.log("ws: onclose");
+        ws.close();
+    }
+    ws.onerror = function (evt) {
+        console.log(evt);
+    }
+</script>
+</body>
+
+</html>
