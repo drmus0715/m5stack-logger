@@ -9,8 +9,13 @@
 #include <elapsedMillis.h>    // elapsedMillisライブラリ
 #include <SPIFFS.h>
 #include "index_html.h" // web server root index
-#include "bmm150.h"
-#include "bmm150_defs.h"
+// #include "bmm150.h"
+// #include "bmm150_defs.h"
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
 
 //無線LANの設定　アクセスポイントのSSIDとパスワード
 const char *ap_ssid = "ESP32AP";      // APのSSID
@@ -23,6 +28,12 @@ DNSServer dnsServer;
 WebServer server(80);
 // Websocketサーバー 192.68.x.x:81
 WebSocketsServer webSocket = WebSocketsServer(81); // 81番ポート
+// Telnet Server(Send Only)
+// WiFiServer cmdServer(23);
+// WiFiClient client;
+// Bluetooth
+BluetoothSerial SerialBT;
+char btname[11];
 
 // サンプリング周期
 elapsedMillis sensorElapsed;
@@ -70,19 +81,25 @@ void displayLcd(float gyroX, float gyroY, float gyroZ, float accX, float accY,
     M5.Lcd.setCursor(0, 192);
     M5.Lcd.printf("Webserver: %s", WiFi.softAPIP().toString().c_str());
     M5.Lcd.setCursor(0, 214);
+    M5.Lcd.printf("BT Serial: %s", btname);
 }
 
 // センサのデータ(JSON形式)
 const char SENSOR_JSON[] PROGMEM =
     R"=====({"Accelerometer":{"x":%.2f,"y":%.2f,"z":%.2f},"Gyro":{"x":%.2f,"y":%.2f,"z":%.2f},"Geomagnetic":{"x":%.2f,"y":%.2f,"z":%.2f}})=====";
 
+// センサのデータ(CSV形式)
+const char SENSOR_CSV[] PROGMEM =
+    R"=====(%lu, %d, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f)=====";
+
 // データの更新
 void sensor_loop() {
-
+    static unsigned long count = 0;
     float acc[3] = {};
     float gyro[3] = {};
     float geo[3] = {};
     char payload[1024];
+    char csv_data[1024];
 
     // Get Sensor value
     M5.IMU.getGyroData(&gyro[0], &gyro[1], &gyro[2]);
@@ -101,7 +118,31 @@ void sensor_loop() {
 
     // WebSocketでデータ送信(全端末へブロードキャスト)
     webSocket.broadcastTXT(payload, strlen(payload));
-    Serial.println(payload);
+
+    // SerialへCSV形式で出す
+    snprintf_P(csv_data, sizeof(csv_data), SENSOR_CSV, count,
+               xTaskGetTickCount() / portTICK_RATE_MS, acc[0], acc[1], acc[2],
+               gyro[0], gyro[1], gyro[2], geo[0], geo[1], geo[2]);
+    Serial.println(csv_data);
+    if (SerialBT.available()) {
+        SerialBT.println(csv_data);
+    }
+    // テスト
+    // if (client.connected()) {
+    //     client.print(payload);
+    // }
+    count++;
+}
+
+void callbackBT(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
+    if (event == ESP_SPP_SRV_OPEN_EVT) {
+        SerialBT.println(
+            "Count, Time[ms], GyroX, GyroY, GyroZ, AccX, AccY, AccZ, "
+            "GeoX, GeoY, GeoZ");
+    } else if (event == ESP_SPP_CLOSE_EVT) {
+        //切断後LEDを点滅させる
+        // ticker.attach(0.5, ledBlink);
+    }
 }
 
 void setup() {
@@ -150,6 +191,20 @@ void setup() {
 
     // WebSocketサーバー開始
     webSocket.begin();
+
+    // BluetoothのMACアドレス取得
+    uint8_t macBT[6];
+    esp_read_mac(macBT, ESP_MAC_BT);
+    // BluetoothのMACアドレスの下4桁を使用して固有のデバイス名作成
+    sprintf(btname, "ESP32-%02X%02X", macBT[4], macBT[5]);
+    // Bluetoothのcallback関数設定
+    SerialBT.register_callback(callbackBT);
+    //先ほど作成したデバイス名でBluetooth開始
+    SerialBT.begin(btname);
+
+    // Serial CSVヘッダ
+    Serial.println("Count, Time[ms], GyroX, GyroY, GyroZ, AccX, AccY, AccZ, "
+                   "GeoX, GeoY, GeoZ");
 }
 
 void loop() {
